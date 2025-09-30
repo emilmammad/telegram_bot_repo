@@ -2,34 +2,31 @@ import os
 import nest_asyncio
 nest_asyncio.apply()
 
-from fastapi import FastAPI
-import uvicorn
 import asyncio
 from io import BytesIO
 import struct
-import mimetypes
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 from elevenlabs.client import ElevenLabs
 from google import genai
+from dotenv import load_dotenv
 
 # ---------- Load environment variables ----------
-from dotenv import load_dotenv
 load_dotenv()
-
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ELEVENLAB_API_KEY = os.getenv("ELEVENLAB_API_KEY")
+VOICE_ID = "Mc435dX3Wed3ISvcov0t"  # ElevenLabs target voice
 
 # ---------- Initialize clients ----------
 client = genai.Client(api_key=GEMINI_API_KEY)
 elevenlabs = ElevenLabs(api_key=ELEVENLAB_API_KEY)
-VOICE_ID = "Mc435dX3Wed3ISvcov0t"
 
 # ---------- Helper functions ----------
 def convert_to_wav(audio_data: bytes, sample_rate: int = 24000, bits_per_sample: int = 16) -> bytes:
+    """Wrap raw PCM audio bytes in WAV header."""
     num_channels = 1
     data_size = len(audio_data)
     bytes_per_sample = bits_per_sample // 8
@@ -45,19 +42,27 @@ def convert_to_wav(audio_data: bytes, sample_rate: int = 24000, bits_per_sample:
 
 # ---------- Telegram Handlers ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Salam! Texti yazın, səsə çevirim.")
+    await update.message.reply_text(
+        "Salam! Text yazın səsə çevirmək üçün, ya da səs mesajı göndərin onu klonlamaq üçün."
+    )
 
+# --- Text to speech handler ---
 async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     from google.genai import types
 
     # Step 1: Gemini TTS
     model = "gemini-2.5-pro-preview-tts"
-    contents = [types.Content(role="user", parts=[types.Part.from_text(text=f"""
+    contents = [
+        types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=f"""
         Generate a male Azerbaijani voice with a neutral accent, medium pitch,
         steady rhythm, and moderate natural pace.
         Don't change anything. Read as you see:: {text}
-    """)])]
+    """)],
+        )
+    ]
     generate_content_config = types.GenerateContentConfig(
         temperature=1,
         response_modalities=["audio"],
@@ -90,25 +95,47 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bio.name = "voice.mp3"
     bio.seek(0)
 
-    # Step 3: Send audio as Telegram voice/audio
+    await update.message.reply_audio(bio)
+
+# --- Voice cloning handler ---
+async def clone_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.voice:
+        await update.message.reply_text("Zəhmət olmasa səs mesajı göndərin.")
+        return
+
+    # Download Telegram voice file
+    file = await update.message.voice.get_file()
+    voice_bytes = await file.download_as_bytearray()
+
+    # Convert to ElevenLabs voice
+    audio_stream = elevenlabs.speech_to_speech.convert(
+        voice_id=VOICE_ID,  # target voice
+        audio=voice_bytes,
+        model_id="eleven_multilingual_sts_v2",
+        output_format="mp3_44100_128"
+    )
+    audio_bytes = b"".join(audio_stream)
+    bio = BytesIO(audio_bytes)
+    bio.name = "cloned_voice.mp3"
+    bio.seek(0)
+
     await update.message.reply_audio(bio)
 
 # ---------- Build Telegram bot ----------
 app_bot = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 app_bot.add_handler(CommandHandler("start", start))
 app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
+app_bot.add_handler(MessageHandler(filters.VOICE, clone_voice))
 
-# Run bot in background
+# ---------- Run bot in background ----------
 asyncio.create_task(app_bot.run_polling())
 
-# ---------- Minimal FastAPI server ----------
+# ---------- Optional: minimal FastAPI server (for Render/Railway) ----------
+# import uvicorn
+# from fastapi import FastAPI
 # app = FastAPI()
-
 # @app.get("/")
-# def root():
-#     return {"status": "Bot is running"}
-
-# # ---------- Run Uvicorn ----------
+# def root(): return {"status": "Bot is running"}
 # if __name__ == "__main__":
 #     port = int(os.environ.get("PORT", 10000))
 #     uvicorn.run(app, host="0.0.0.0", port=port)
