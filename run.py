@@ -15,16 +15,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 from elevenlabs.client import ElevenLabs
 from google import genai
 
-from telegram import Bot
-
-try:
-    TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    bot = Bot(token=TOKEN)
-    bot.get_updates(offset=-1)  # This discards any pending updates
-    print("Pending updates cleared!")
-except:
-    pass
-
 # ---------- Load environment variables ----------
 from dotenv import load_dotenv
 load_dotenv()
