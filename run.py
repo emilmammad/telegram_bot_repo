@@ -86,7 +86,7 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Step 2: ElevenLabs voice conversion in memory
     audio_stream = elevenlabs.speech_to_speech.convert(
         voice_id=VOICE_ID,
-        audio=audio_buffer,
+        audio=BytesIO(audio_buffer),  # wrap in BytesIO
         model_id="eleven_multilingual_sts_v2",
         output_format="mp3_44100_128"
     )
@@ -107,10 +107,14 @@ async def clone_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await update.message.voice.get_file()
     voice_bytes = await file.download_as_bytearray()
 
+    # Wrap bytes in BytesIO
+    voice_stream = BytesIO(voice_bytes)
+    voice_stream.name = "voice.ogg"  # Telegram voice is OGG
+
     # Convert to ElevenLabs voice
     audio_stream = elevenlabs.speech_to_speech.convert(
-        voice_id=VOICE_ID,  # target voice
-        audio=voice_bytes,
+        voice_id=VOICE_ID,
+        audio=voice_stream,
         model_id="eleven_multilingual_sts_v2",
         output_format="mp3_44100_128"
     )
@@ -130,7 +134,7 @@ app_bot.add_handler(MessageHandler(filters.VOICE, clone_voice))
 # ---------- Run bot in background ----------
 asyncio.create_task(app_bot.run_polling())
 
-# ---------- Optional: minimal FastAPI server (for Render/Railway) ----------
+# Optional: minimal FastAPI server for Render/Railway
 # import uvicorn
 # from fastapi import FastAPI
 # app = FastAPI()
