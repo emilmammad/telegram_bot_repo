@@ -1,0 +1,10 @@
+python-telegram-bot
+python-dotenv
+requests
+elevenlabs
+google-genai
+nest_asyncio
+fastapi
+uvicorn
+
+
